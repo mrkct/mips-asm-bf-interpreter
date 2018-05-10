@@ -5,12 +5,13 @@
 .eqv codeLength $s2
 .eqv fileDescriptor $s3
 
-TESTFILE: .asciiz "brainfuck.bf"
+TESTFILE: .asciiz "TestIO.bf\n"
+
+filename: .space 256
+msg_chooseFile: .asciiz "Seleziona il file da aprire: "
 
 error_fileTooBig: .asciiz "Il file e' troppo grande per essere eseguito.\n"
 error_cantOpenFile: .asciiz "Impossibile aprire il file.\n"
-
-debugCodeLen: .asciiz "\nSopra(Code Length)\n"
 
 .eqv maxCodeSpace 8192
 codeSpace: .space maxCodeSpace		# Space for read code
@@ -20,7 +21,48 @@ dataSpace: .space maxDataSpace
 
 .text
 
-la $t0, TESTFILE
+li $v0, 54
+la $a0, msg_chooseFile
+la $a1, filename
+li $a2, 256
+syscall
+
+# Se non è stato inserito niente oppure se è stato premuto cancella $a1 != 0
+bnez $a1, end
+
+# Il dialog aggiunge anche il \n alla fine del filename, 
+# che se passato alla syscall open file non fa trovare il file
+# bisogna toglierlo quindi. Questo pezzo di codice sostituisce i \n con \0. 
+# Tanto i \n non sono validi nei filename
+
+la $t0, filename
+li $t1, '\n'
+
+FilterNewlineLoopStart:
+lb $t2, 0($t0)
+
+li $v0, 11
+move $a0, $t2
+syscall
+
+bne $t2, $t1, FilterNewlineLoopEnd
+li $t1, '\0'
+sb $t1, 0($t0)
+j FilterNewlineLoopExit
+
+FilterNewlineLoopEnd:
+addi $t2, $t2, 1
+j FilterNewlineLoopStart
+
+FilterNewlineLoopExit:
+
+la $t0, filename
+
+li $v0, 4
+la $a0, filename
+syscall
+
+#la $t0, TESTFILE
 
 # Open source code file
 li $v0, 13
@@ -42,13 +84,13 @@ syscall
 move codeLength, $v0
 
 # Stampa la lunghezza del file caricato
-li $v0, 1
-move $a0, codeLength
-syscall
+# li $v0, 1
+# move $a0, codeLength
+# syscall
 
-li $v0, 4
-la $a0, debugCodeLen
-syscall
+# li $v0, 4
+# la $a0, debugCodeLen
+# syscall
 
 
 
@@ -84,11 +126,6 @@ beq $t1, $t0, bf_jback
 interp_end:
 addi pc, pc, 1
 
-# Stampa valore PC
-li $v0, 1
-move $a0, pc
-syscall
-
 beq pc, codeLength, end
 j exec
 
@@ -105,6 +142,7 @@ la $a0, error_cantOpenFile
 syscall
 j end
 
+# Run when a '+' is found
 bf_add:
 la $t0, dataSpace
 add $t0, $t0, cursor
@@ -112,21 +150,56 @@ lb $t1, 0($t0)
 addi $t1, $t1, 1
 sb $t1, 0($t0)
 j interp_end
+
+# Run when a '-' is found
 bf_sub:
+la $t0, dataSpace
+add $t0, $t0, cursor
+lb $t1, 0($t0)
+subi $t1, $t1, 1
+sb $t1, 0($t0)
+j interp_end
+
+# Run when a '<' is found
 bf_mvleft:
 subi cursor, cursor, 1
 j interp_end
+
+# Run when a '>' is found
 bf_mvright:
 addi cursor, cursor, 1
 j interp_end
+
+# Runs when a ',' is found
 bf_in:
+la $t0, dataSpace
+add $t0, $t0, cursor
+li $v0, 12
+syscall
+sb $v0, 0($t0)
+j interp_end
+
+# Runs when a '.' is found
 bf_out:
+la $t0, dataSpace
+add $t0, $t0, cursor
+lb $t1, 0($t0)
+li $v0, 11
+move $a0, $t1
+syscall
+j interp_end
+
+#Runs when a '[' is found
 bf_jforw:
+j interp_end
+
+# Runs when a ']' is found
 bf_jback:
 j interp_end
 
+# This only runs when a file is done
 end:
-# Close the file 
+# Close the file
 li $v0, 16
 move $a0, $s2
 syscall
